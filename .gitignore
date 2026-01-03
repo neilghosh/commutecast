@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+*.bak
+*.swp
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+functions/venv/
+tests/__pycache__/
+functions/venv/
