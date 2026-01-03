@@ -33,7 +33,7 @@ def _episode_title_from_description(description: str, timestamp: str, provided_t
             return trimmed if trimmed else f"News Podcast - {timestamp}"
     return f"News Podcast - {timestamp}"
 
-def upload_podcast_artifacts(uid: str, user_name: str, timestamp: str, transcript: str, audio_io: io.BytesIO, topics: list = None):
+def upload_podcast_artifacts(uid: str, user_name: str, timestamp: str, transcript: str, audio_io: io.BytesIO, topics: list = None, ext: str = "m4a"):
     """
     Uploads transcript and audio to user folders with public access.
     Updates RSS feed automatically.
@@ -48,8 +48,13 @@ def upload_podcast_artifacts(uid: str, user_name: str, timestamp: str, transcrip
     transcript_blob.make_public()
     
     # Upload Audio
-    audio_blob = bucket.blob(f"{base_path}/podcast.wav")
-    audio_blob.upload_from_file(audio_io, content_type="audio/wav")
+    audio_filename = f"podcast.{ext.strip('.')}"
+    content_type = f"audio/{ext.strip('.')}"
+    if ext.strip('.') == "m4a":
+        content_type = "audio/x-m4a"
+        
+    audio_blob = bucket.blob(f"{base_path}/{audio_filename}")
+    audio_blob.upload_from_file(audio_io, content_type=content_type)
     audio_blob.make_public()
     
     # Get file size for RSS
@@ -81,13 +86,16 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
 
     episodes = {}
     for blob in blobs:
-        if not blob.name.endswith('/podcast.wav'):
+        # Match any audio file (m4a, mp3, wav)
+        if not any(blob.name.endswith(ext) for ext in ['.m4a', '.mp3', '.wav']):
             continue
+            
+        ext = os.path.splitext(blob.name)[1].strip('.')
         ep_timestamp = blob.name.split('/')[-2]
         blob.reload()
 
         # Try to read matching transcript for description
-        transcript_path = blob.name.replace('/podcast.wav', '/transcript.txt')
+        transcript_path = os.path.join(os.path.dirname(blob.name), 'transcript.txt')
         transcript_blob = bucket.blob(transcript_path)
         ep_description = description  # fallback to current description snippet
         ep_title = None
@@ -103,6 +111,7 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
             "audio_size": blob.size,
             "description": ep_description,
             "title": ep_title,
+            "ext": ext
         }
 
     if not episodes:
@@ -136,13 +145,19 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
         item_title = _episode_title_from_description(episode["description"], ts, episode.get("title"))
         safe_title = item_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
+        # Determine correct MIME type
+        audio_ext = episode.get("ext", "m4a")
+        mime_type = f"audio/{audio_ext}"
+        if audio_ext == "m4a":
+            mime_type = "audio/x-m4a"
+
         rss_content.extend([
             '<item>',
             f'<title>{safe_title}</title>',
             f'<description>{safe_desc}</description>',
             f'<pubDate>{pub_date}</pubDate>',
             f'<guid>{episode["audio_url"]}</guid>',
-            f'<enclosure url="{episode["audio_url"]}" type="audio/wav" length="{episode["audio_size"]}" />',
+            f'<enclosure url="{episode["audio_url"]}" type="{mime_type}" length="{episode["audio_size"]}" />',
             '</item>'
         ])
 
@@ -171,28 +186,33 @@ def regenerate_rss_feed(uid: str, user_name: str = None):
     episodes = {}
     # Collect all audio files and their metadata
     for blob in blobs:
-        if blob.name.endswith('/podcast.wav'):
-            timestamp = blob.name.split('/')[-2]  # Extract timestamp from path
-            blob.reload()  # Get metadata including size
+        # Match any audio file (m4a, mp3, wav)
+        if not any(blob.name.endswith(ext) for ext in ['.m4a', '.mp3', '.wav']):
+            continue
+
+        ext = os.path.splitext(blob.name)[1].strip('.')
+        timestamp = blob.name.split('/')[-2]  # Extract timestamp from path
+        blob.reload()  # Get metadata including size
+        
+        # Try to get transcript for description
+        transcript_path = os.path.join(os.path.dirname(blob.name), 'transcript.txt')
+        transcript_blob = bucket.blob(transcript_path)
+        description = "AI-generated news podcast"
+        title = None
+        try:
+            if transcript_blob.exists():
+                transcript = transcript_blob.download_as_text()
+                title, description = _parse_transcript_title_and_snippet(transcript)
+        except Exception as e:
+            print(f"Warning: transcript read failed for {transcript_path}: {e}")
             
-            # Try to get transcript for description
-            transcript_path = blob.name.replace('/podcast.wav', '/transcript.txt')
-            transcript_blob = bucket.blob(transcript_path)
-            description = "AI-generated news podcast"
-            title = None
-            try:
-                if transcript_blob.exists():
-                    transcript = transcript_blob.download_as_text()
-                    title, description = _parse_transcript_title_and_snippet(transcript)
-            except Exception as e:
-                print(f"Warning: transcript read failed for {transcript_path}: {e}")
-                
-            episodes[timestamp] = {
-                'audio_url': blob.public_url,
-                'audio_size': blob.size,
-                'description': description,
-                'title': title,
-            }
+        episodes[timestamp] = {
+            'audio_url': blob.public_url,
+            'audio_size': blob.size,
+            'description': description,
+            'title': title,
+            'ext': ext
+        }
     
     if not episodes:
         print(f"No episodes found for user {uid}")
@@ -228,13 +248,19 @@ def regenerate_rss_feed(uid: str, user_name: str = None):
         item_title = _episode_title_from_description(episode['description'], timestamp, episode.get('title'))
         safe_title = item_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
+        # Determine correct MIME type
+        audio_ext = episode.get("ext", "m4a")
+        mime_type = f"audio/{audio_ext}"
+        if audio_ext == "m4a":
+            mime_type = "audio/x-m4a"
+
         rss_content.extend([
             '<item>',
             f'<title>{safe_title}</title>',
             f'<description>{description}</description>',
             f'<pubDate>{pub_date}</pubDate>',
             f'<guid>{episode["audio_url"]}</guid>',
-            f'<enclosure url="{episode["audio_url"]}" type="audio/wav" length="{episode["audio_size"]}" />',
+            f'<enclosure url="{episode["audio_url"]}" type="{mime_type}" length="{episode["audio_size"]}" />',
             '</item>'
         ])
     

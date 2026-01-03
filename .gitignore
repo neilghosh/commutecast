@@ -21,4 +21,4 @@ Thumbs.db
 # Project specific
 functions/venv/
 tests/__pycache__/
-functions/venv/
+test_outputs/

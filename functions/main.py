@@ -101,26 +101,9 @@ def generate_podcast_worker(event: pubsub_fn.CloudEvent[pubsub_fn.MessagePublish
 
     try:
         engine = PodcastEngine(api_key=GEMINI_API_KEY)
-
-        # Minimum words to better match requested duration (approx 150-180 wpm)
-        min_words = max(800, int(duration_mins * 180))
-        
+ 
         # 1. Generate Transcript
-        prompt = f"""
-        You are writing a news podcast.
-        First line must be EXACTLY: TITLE: <5-10 word concise headline for the entire episode>
-        Then a blank line, then ONLY the dialogue for a {duration_mins}-minute news podcast.
-        Topics: {', '.join(topics)} drawn strictly from the last 24 hours (do NOT use older stories).
-        Format: Two hosts - John (Male) and Rebecca (Female).
-        Length: At least {min_words} words; do NOT stop early. Aim for natural pacing to fill ~{duration_mins} minutes.
-
-        Dialogue rules:
-        - Use speaker tags: "John: " and "Rebecca: "
-        - Meta commentary and light stage cues are allowed if they add flavor
-        - Make it conversational, engaging, and reference dates when relevant; cite that stories are within the last 24 hours
-        - If fresh news is sparse, go deeper: add context, background, implications, and credible source mentions; avoid filler/repetition
-        """
-        transcript = engine.generate_transcript(prompt)
+        transcript = engine.generate_transcript(topics, duration_mins)
         print(f"Generated transcript for {uid}")
         
         # 2. Generate Audio
@@ -128,8 +111,30 @@ def generate_podcast_worker(event: pubsub_fn.CloudEvent[pubsub_fn.MessagePublish
         audio_blob = provider.synthesize(transcript)
         wav_io = engine.save_to_wav(audio_blob)
         
-        # 3. Store and update RSS
-        paths = upload_podcast_artifacts(uid, user_name, timestamp, transcript, wav_io, topics)
+        # 3. Optimize Audio (WAV -> M4A)
+        import io
+        temp_wav = f"/tmp/{uid}_{timestamp}.wav"
+        temp_m4a = f"/tmp/{uid}_{timestamp}.m4a"
+        
+        with open(temp_wav, "wb") as f:
+            f.write(wav_io.getbuffer())
+        
+        success = engine.optimize_audio(temp_wav, temp_m4a)
+        
+        if success:
+            with open(temp_m4a, "rb") as f:
+                final_audio_io = io.BytesIO(f.read())
+            extension = "m4a"
+            # Cleanup
+            if os.path.exists(temp_m4a): os.remove(temp_m4a)
+        else:
+            final_audio_io = wav_io
+            extension = "wav"
+            
+        if os.path.exists(temp_wav): os.remove(temp_wav)
+
+        # 4. Store and update RSS
+        paths = upload_podcast_artifacts(uid, user_name, timestamp, transcript, final_audio_io, topics, ext=extension)
         
         print(f"Completed podcast generation for {uid}")
         print(f"RSS feed available at: {paths['rss_url']}")
