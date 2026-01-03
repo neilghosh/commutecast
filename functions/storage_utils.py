@@ -6,32 +6,36 @@ from xml.etree import ElementTree as ET
 
 
 def _parse_transcript_title_and_snippet(transcript_text: str):
-    """Extracts a TITLE line if present and returns (title, snippet)."""
+    """Extracts a SUMMARY or TITLE line if present and returns (title, snippet)."""
     lines = transcript_text.splitlines()
     title = None
+    body_start_index = 0
 
-    if lines and lines[0].strip().lower().startswith("title:"):
-        title = lines[0].split(":", 1)[1].strip()
-        body = "\n".join(lines[1:]).strip()
-    else:
-        body = transcript_text.strip()
-
+    if lines:
+        first_line = lines[0].strip().lower()
+        if first_line.startswith("summary:") or first_line.startswith("title:"):
+            title = lines[0].split(":", 1)[1].strip()
+            body_start_index = 1
+            
+    body = "\n".join(lines[body_start_index:]).strip()
     snippet = body[:200] + "..." if len(body) > 200 else body
     return title, snippet
 
 
 def _episode_title_from_description(description: str, timestamp: str, provided_title: str = None) -> str:
-    """Derive a concise title from the transcript snippet (prioritizing summary over explicit title)."""
-    # Prefer deriving from description/summary as requested by user
+    """Prioritize the provided summary/title; fallback to deriving from snippet."""
+    if provided_title:
+        # Some cleanup if the model still included the label
+        clean_title = provided_title.replace("SUMMARY:", "").replace("TITLE:", "").strip()
+        trimmed = clean_title[:120].rstrip()
+        if trimmed:
+            return trimmed
+
     if description:
         first_line = description.strip().split('\n', 1)[0].strip()
         if first_line:
             trimmed = first_line[:120].rstrip()
             return trimmed if trimmed else f"News Podcast - {timestamp}"
-            
-    if provided_title:
-        trimmed = provided_title[:120].rstrip()
-        return trimmed if trimmed else f"News Podcast - {timestamp}"
         
     return f"News Podcast - {timestamp}"
 

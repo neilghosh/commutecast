@@ -133,10 +133,14 @@ class PodcastEngine:
         # 1. Generate Intro
         t0 = time.time()
         intro_prompt = f"""
-        Today is {today_date}. Write a 2-minute INTRO dialogue for 'CommuteCast'.
-        Topics to cover: {', '.join(topics)}.
-        CRITICAL: Treat these topics as INDEPENDENT news segments. Do NOT merge them.
-        Respond ONLY with John:/Rebecca: dialogue.
+        Today is {today_date}.
+        
+        STRICT RULES:
+        1. FIRST LINE: SUMMARY: <5-10 word snappy headline of the news>
+        2. THEN: Write a 2-minute INTRO dialogue for 'CommuteCast' covering: {', '.join(topics)}.
+        3. TOPIC INDEPENDENCE: Treat these topics as INDEPENDENT news segments. Do NOT merge them.
+        4. NO META-TALK: Do NOT say "Okay, I'm ready" or any acknowledgments. Start immediately with the SUMMARY.
+        5. FORMAT: Respond ONLY with SUMMARY: line and then John:/Rebecca: dialogue.
         """
         segments.append(self._call_genai(intro_prompt))
         print(f"   - Intro segment took {time.time() - t0:.2f}s")
@@ -148,15 +152,14 @@ class PodcastEngine:
             t_chunk = time.time()
             
             chunk_prompt = f"""
-            Today's Date: {today_date}. This is Part {i+1} of {num_chunks} for a 30-minute 'CommuteCast' episode.
+            Today's Date: {today_date}. Step {i+1} of {num_chunks} for 'CommuteCast'.
             Current Topic: {current_topic}
             
             STRICT INSTRUCTIONS:
-            1. TOPIC INDEPENDENCE: Focus EXCLUSIVELY on {current_topic}. Do NOT limit it to how it relates to other topics in the list.
-            2. FACTS ONLY: Use Google Search to find REAL news stories from the last 24 hours regarding {current_topic}.
-            3. NO OPINION: Focus on what actually happened.
-            4. DEPTH: Provide a detailed 5-minute deep-dive conversation (~800 words). 
-            5. FORMAT: Respond ONLY with John:/Rebecca: dialogue.
+            1. TOPIC INDEPENDENCE: Focus EXCLUSIVELY on {current_topic}.
+            2. FACTS ONLY: Use Google Search for the last 24 hours.
+            3. NO META-TALK: Start immediately with dialogue. NO "Sure", "Next up", or acknowledgments.
+            4. FORMAT: Respond ONLY with John:/Rebecca: dialogue.
             """
             segments.append(self._call_genai(chunk_prompt))
             print(f"   - Chunk {i+1}/{num_chunks} ({current_topic}) took {time.time() - t_chunk:.2f}s")
@@ -174,7 +177,7 @@ class PodcastEngine:
         cleaned_lines = []
         for line in full_text.split('\n'):
             line = line.strip().replace('**', '')
-            if line.startswith(("John:", "Rebecca:")):
+            if line.startswith(("John:", "Rebecca:", "SUMMARY:")):
                 cleaned_lines.append(line)
         
         return "\n".join(cleaned_lines)
@@ -206,15 +209,16 @@ class PodcastEngine:
         today_date = now.strftime("%A, %B %d, %Y")
         
         return f"""
-        Today: {today_date}. You are producing 'CommuteCast' (target {target_words} words).
+        Today: {today_date}. 'CommuteCast' ({target_words} words).
         Topics: {', '.join(topics)}
         
         RULES:
-        1. TOPIC INDEPENDENCE: Treat each topic as a distinct news segment. Do NOT merge them or limit one to the context of another.
-        2. Respond ONLY with John:/Rebecca: dialogue. 
-        3. First line: TITLE: <headline>
-        4. Freshness: Use Google Search for the last 24 hours.
-        5. Depth: Provide detailed analysis to hit the {duration_mins} minute target.
+        1. FIRST LINE: SUMMARY: <5-10 word snappy headline>
+        2. THEN: John:/Rebecca: dialogue only.
+        3. NO META-TALK: Start immediately with SUMMARY. No "Okay", "I'll do that".
+        4. TOPIC INDEPENDENCE: Treat each as distinct.
+        5. Freshness: Google Search last 24 hours.
+        6. Depth: Aim for {duration_mins} mins.
         """
 
     @staticmethod
