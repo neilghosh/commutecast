@@ -6,18 +6,34 @@ from xml.etree import ElementTree as ET
 
 
 def _parse_transcript_title_and_snippet(transcript_text: str):
-    """Extracts a SUMMARY or TITLE line if present and returns (title, snippet)."""
+    """Extracts a SUMMARY or TITLE line by searching lines, skipping leading filler."""
     lines = transcript_text.splitlines()
     title = None
-    body_start_index = 0
+    body_lines = []
+    found_title = False
 
-    if lines:
-        first_line = lines[0].strip().lower()
-        if first_line.startswith("summary:") or first_line.startswith("title:"):
-            title = lines[0].split(":", 1)[1].strip()
-            body_start_index = 1
+    for line in lines:
+        clean_line = line.strip()
+        if not clean_line:
+            continue
             
-    body = "\n".join(lines[body_start_index:]).strip()
+        # If we haven't found a title yet, check if this line is one
+        if not found_title:
+            lower_line = clean_line.lower()
+            if lower_line.startswith("summary:") or lower_line.startswith("title:"):
+                title = clean_line.split(":", 1)[1].strip()
+                found_title = True
+                continue
+            # If it's not a title line and not dialogue, it might be filler. 
+            # We don't add to body until we see dialogue or have passed the title.
+            if clean_line.startswith(("John:", "Rebecca:")):
+                body_lines.append(clean_line)
+                found_title = True # Stop looking for title if we hit dialogue first
+        else:
+            # Once title is handled, everything else is body
+            body_lines.append(clean_line)
+
+    body = "\n".join(body_lines).strip()
     snippet = body[:200] + "..." if len(body) > 200 else body
     return title, snippet
 
@@ -149,6 +165,7 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
         safe_desc = episode["description"].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
         item_title = _episode_title_from_description(episode["description"], ts, episode.get("title"))
+        print(f"   - Episode {ts} Title: {item_title}")
         safe_title = item_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
         # Determine correct MIME type
