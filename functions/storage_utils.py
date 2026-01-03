@@ -21,16 +21,18 @@ def _parse_transcript_title_and_snippet(transcript_text: str):
 
 
 def _episode_title_from_description(description: str, timestamp: str, provided_title: str = None) -> str:
-    """Prefer provided title; otherwise derive a concise title from the transcript snippet."""
-    if provided_title:
-        trimmed = provided_title[:120].rstrip()
-        return trimmed if trimmed else f"News Podcast - {timestamp}"
-
+    """Derive a concise title from the transcript snippet (prioritizing summary over explicit title)."""
+    # Prefer deriving from description/summary as requested by user
     if description:
         first_line = description.strip().split('\n', 1)[0].strip()
         if first_line:
             trimmed = first_line[:120].rstrip()
             return trimmed if trimmed else f"News Podcast - {timestamp}"
+            
+    if provided_title:
+        trimmed = provided_title[:120].rstrip()
+        return trimmed if trimmed else f"News Podcast - {timestamp}"
+        
     return f"News Podcast - {timestamp}"
 
 def upload_podcast_artifacts(uid: str, user_name: str, timestamp: str, transcript: str, audio_io: io.BytesIO, topics: list = None, ext: str = "m4a"):

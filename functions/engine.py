@@ -130,13 +130,13 @@ class PodcastEngine:
         today_date = now.strftime("%A, %B %d, %Y")
         segments = []
         
-        # 1. Generate Title and Intro
+        # 1. Generate Intro
         t0 = time.time()
         intro_prompt = f"""
-        Today is {today_date}. Write the TITLE and a 2-minute INTRO dialogue for 'CommuteCast'.
+        Today is {today_date}. Write a 2-minute INTRO dialogue for 'CommuteCast'.
         Topics to cover: {', '.join(topics)}.
-        CRITICAL: Treat these topics as INDEPENDENT news segments. Do NOT merge them (e.g. if topics are Hyderabad and Cricket, intro them as two separate stories).
-        Start with TITLE: and respond ONLY with John:/Rebecca: dialogue.
+        CRITICAL: Treat these topics as INDEPENDENT news segments. Do NOT merge them.
+        Respond ONLY with John:/Rebecca: dialogue.
         """
         segments.append(self._call_genai(intro_prompt))
         print(f"   - Intro segment took {time.time() - t0:.2f}s")
@@ -174,7 +174,7 @@ class PodcastEngine:
         cleaned_lines = []
         for line in full_text.split('\n'):
             line = line.strip().replace('**', '')
-            if line.startswith(("John:", "Rebecca:", "TITLE:")):
+            if line.startswith(("John:", "Rebecca:")):
                 cleaned_lines.append(line)
         
         return "\n".join(cleaned_lines)
