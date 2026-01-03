@@ -101,19 +101,24 @@ def generate_podcast_worker(event: pubsub_fn.CloudEvent[pubsub_fn.MessagePublish
 
     try:
         engine = PodcastEngine(api_key=GEMINI_API_KEY)
+
+        # Minimum words to better match requested duration (approx 150-180 wpm)
+        min_words = max(800, int(duration_mins * 180))
         
         # 1. Generate Transcript
         prompt = f"""
-        Generate ONLY the dialogue for a {duration_mins} minute news podcast transcript.
-        Topics: {', '.join(topics)} from the last 24-48 hours.
+        You are writing a news podcast.
+        First line must be EXACTLY: TITLE: <5-10 word concise headline for the entire episode>
+        Then a blank line, then ONLY the dialogue for a {duration_mins}-minute news podcast.
+        Topics: {', '.join(topics)} drawn strictly from the last 24 hours (do NOT use older stories).
         Format: Two hosts - John (Male) and Rebecca (Female).
-        
-        IMPORTANT: 
-        - Start directly with the dialogue (e.g., "John: Good morning...")
-        - Do NOT include any introductory text, explanations, or meta-commentary
+        Length: At least {min_words} words; do NOT stop early. Aim for natural pacing to fill ~{duration_mins} minutes.
+
+        Dialogue rules:
         - Use speaker tags: "John: " and "Rebecca: "
-        - Include news dates where relevant
-        - Make it conversational and engaging
+        - Meta commentary and light stage cues are allowed if they add flavor
+        - Make it conversational, engaging, and reference dates when relevant; cite that stories are within the last 24 hours
+        - If fresh news is sparse, go deeper: add context, background, implications, and credible source mentions; avoid filler/repetition
         """
         transcript = engine.generate_transcript(prompt)
         print(f"Generated transcript for {uid}")

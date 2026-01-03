@@ -5,8 +5,27 @@ import io
 from xml.etree import ElementTree as ET
 
 
-def _episode_title_from_description(description: str, timestamp: str) -> str:
-    """Derive a concise episode title from the transcript snippet."""
+def _parse_transcript_title_and_snippet(transcript_text: str):
+    """Extracts a TITLE line if present and returns (title, snippet)."""
+    lines = transcript_text.splitlines()
+    title = None
+
+    if lines and lines[0].strip().lower().startswith("title:"):
+        title = lines[0].split(":", 1)[1].strip()
+        body = "\n".join(lines[1:]).strip()
+    else:
+        body = transcript_text.strip()
+
+    snippet = body[:200] + "..." if len(body) > 200 else body
+    return title, snippet
+
+
+def _episode_title_from_description(description: str, timestamp: str, provided_title: str = None) -> str:
+    """Prefer provided title; otherwise derive a concise title from the transcript snippet."""
+    if provided_title:
+        trimmed = provided_title[:120].rstrip()
+        return trimmed if trimmed else f"News Podcast - {timestamp}"
+
     if description:
         first_line = description.strip().split('\n', 1)[0].strip()
         if first_line:
@@ -71,10 +90,11 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
         transcript_path = blob.name.replace('/podcast.wav', '/transcript.txt')
         transcript_blob = bucket.blob(transcript_path)
         ep_description = description  # fallback to current description snippet
+        ep_title = None
         try:
             if transcript_blob.exists():
                 transcript_text = transcript_blob.download_as_text()
-                ep_description = transcript_text[:200] + "..." if len(transcript_text) > 200 else transcript_text
+                ep_title, ep_description = _parse_transcript_title_and_snippet(transcript_text)
         except Exception as e:
             print(f"Warning: transcript read failed for {transcript_path}: {e}")
 
@@ -82,6 +102,7 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
             "audio_url": blob.public_url,
             "audio_size": blob.size,
             "description": ep_description,
+            "title": ep_title,
         }
 
     if not episodes:
@@ -112,7 +133,7 @@ def update_rss_feed(uid: str, user_name: str, timestamp: str, audio_url: str, de
         # Escape XML entities in description
         safe_desc = episode["description"].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-        item_title = _episode_title_from_description(episode["description"], ts)
+        item_title = _episode_title_from_description(episode["description"], ts, episode.get("title"))
         safe_title = item_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
         rss_content.extend([
@@ -158,17 +179,19 @@ def regenerate_rss_feed(uid: str, user_name: str = None):
             transcript_path = blob.name.replace('/podcast.wav', '/transcript.txt')
             transcript_blob = bucket.blob(transcript_path)
             description = "AI-generated news podcast"
+            title = None
             try:
                 if transcript_blob.exists():
                     transcript = transcript_blob.download_as_text()
-                    description = transcript[:200] + "..." if len(transcript) > 200 else transcript
-            except:
-                pass
+                    title, description = _parse_transcript_title_and_snippet(transcript)
+            except Exception as e:
+                print(f"Warning: transcript read failed for {transcript_path}: {e}")
                 
             episodes[timestamp] = {
                 'audio_url': blob.public_url,
                 'audio_size': blob.size,
-                'description': description
+                'description': description,
+                'title': title,
             }
     
     if not episodes:
@@ -202,7 +225,7 @@ def regenerate_rss_feed(uid: str, user_name: str = None):
         # Escape XML entities in description
         description = episode['description'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         
-        item_title = _episode_title_from_description(episode['description'], timestamp)
+        item_title = _episode_title_from_description(episode['description'], timestamp, episode.get('title'))
         safe_title = item_title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
         rss_content.extend([
